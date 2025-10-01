@@ -1,7 +1,7 @@
 package org.com.circuitbreaker;
 
 public class CircuitBreaker {
-	private volatile CircuitStatus status = CircuitStatus.CLOSED;
+	private CircuitStatus status = CircuitStatus.CLOSED;
 
 	private int failureCounter = 0;
 	private final int failureThreshold;
@@ -16,6 +16,7 @@ public class CircuitBreaker {
 		if(this.status == CircuitStatus.OPEN) {
 			if(System.currentTimeMillis() - lastFailureTime > retryTimeoutMillis) {
 				status = CircuitStatus.HALF_OPEN;
+				return true;
 			}
 
 			return false;
