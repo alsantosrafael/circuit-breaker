@@ -27,7 +27,7 @@ public class CircuitBreaker {
 	 *
 	 * @return true if the request is allowed, false otherwise
 	 */
-	public boolean allowRequest() {
+	public synchronized boolean allowRequest() {
 		if (this.status == CircuitStatus.OPEN) {
 			if (System.currentTimeMillis() - lastFailureTime > retryTimeOutMillis) {
 				this.status = CircuitStatus.HALF_OPEN;
@@ -41,7 +41,7 @@ public class CircuitBreaker {
 	/**
 	 * Records a successful request, closing the circuit and resetting counters.
 	 */
-	public void recordSuccess() {
+	public synchronized void recordSuccess() {
 		this.status = CircuitStatus.CLOSED;
 		this.failureCounter = 0;
 		this.lastFailureTime = 0;
@@ -51,12 +51,16 @@ public class CircuitBreaker {
 	 * Records a failed request, incrementing the failure counter and updating the last failure time.
 	 * Opens the circuit if the failure threshold is reached.
 	 */
-	public void recordFailure() {
+	public synchronized void recordFailure() {
 		this.failureCounter++;
 		this.lastFailureTime = System.currentTimeMillis();
 
 		if (this.failureCounter == this.failureThreshold) {
 			this.status = CircuitStatus.OPEN;
 		}
+	}
+
+	public CircuitStatus getStatus() {
+		return this.status;
 	}
 }
