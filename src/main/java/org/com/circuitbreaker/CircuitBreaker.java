@@ -34,11 +34,10 @@ public class CircuitBreaker {
 				System.out.println("Trying to close circuit again!");
 				return true;
 			}
-			else if(this.status == CircuitStatus.HALF_OPEN) {
-				System.out.println("Trial to close circuit again failed!");
-				this.status = CircuitStatus.OPEN;
-				return false;
-			}
+
+			return false;
+		} else if(this.status == CircuitStatus.HALF_OPEN) {
+			System.out.println("Trial to close circuit again failed!");
 			return false;
 		}
 		return true;
