@@ -8,10 +8,10 @@ import java.util.concurrent.TimeUnit;
 
 public class Main {
 	public static void main(String[] args) throws InterruptedException {
-		CircuitBreaker cb = new CircuitBreaker(3, 100);
+		CircuitBreaker cb = new CircuitBreaker(3, 200, 4);
 		ExecutorService executor = Executors.newFixedThreadPool(10);
 
-		for (int i = 0; i < 100; i++) {
+		for (int i = 0; i < 10; i++) {
 			final int requestId = i;
 			System.out.println("Submitting Request " + requestId);
 			Thread.sleep(500);
