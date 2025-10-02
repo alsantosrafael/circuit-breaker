@@ -31,7 +31,13 @@ public class CircuitBreaker {
 		if (this.status == CircuitStatus.OPEN) {
 			if (System.currentTimeMillis() - lastFailureTime > retryTimeOutMillis) {
 				this.status = CircuitStatus.HALF_OPEN;
+				System.out.println("Trying to close circuit again!");
 				return true;
+			}
+			else if(this.status == CircuitStatus.HALF_OPEN) {
+				System.out.println("Trial to close circuit again failed!");
+				this.status = CircuitStatus.OPEN;
+				return false;
 			}
 			return false;
 		}
@@ -50,11 +56,15 @@ public class CircuitBreaker {
 	/**
 	 * Records a failed request, incrementing the failure counter and updating the last failure time.
 	 * Opens the circuit if the failure threshold is reached.
+	 * If the circuit had a previous state of HALF_OPEN, and it fails, it means
+	 * the last trial of reestablishing contact failed, the circuit will open again
 	 */
 	public synchronized void recordFailure() {
 		this.failureCounter++;
 		this.lastFailureTime = System.currentTimeMillis();
-
+		if (this.status == CircuitStatus.HALF_OPEN) {
+			this.status = CircuitStatus.OPEN;
+		}
 		if (this.failureCounter == this.failureThreshold) {
 			this.status = CircuitStatus.OPEN;
 		}

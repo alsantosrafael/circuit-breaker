@@ -8,20 +8,19 @@ import java.util.concurrent.TimeUnit;
 
 public class Main {
 	public static void main(String[] args) throws InterruptedException {
-		CircuitBreaker cb = new CircuitBreaker(3, 1000);
+		CircuitBreaker cb = new CircuitBreaker(3, 100);
 		ExecutorService executor = Executors.newFixedThreadPool(10);
 
-		for (int i = 0; i < 20; i++) {
+		for (int i = 0; i < 100; i++) {
 			final int requestId = i;
 			System.out.println("Submitting Request " + requestId);
+			Thread.sleep(500);
 
 			executor.submit(() -> {
 				System.out.println("Current thread working: " + Thread.currentThread().getName());
 				try {
 					if (cb.allowRequest()) {
-						Thread.sleep(100);
-
-						boolean success = Math.random() > 0.8; // 20% fail, 80% success
+						boolean success = Math.random() > 0.8;
 						if (success) {
 							cb.recordSuccess();
 							System.out.println("Request " + requestId + " SUCCESS");
