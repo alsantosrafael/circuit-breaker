@@ -6,7 +6,7 @@ This project implements a simple, thread-safe Circuit Breaker pattern in Java. T
 
 - **HALF_OPEN State:** After a timeout, the circuit transitions to HALF_OPEN, allowing a single trial request to test if the external service has recovered.
 - **Exponential Backoff:** Retry timeouts increase exponentially after each failure in HALF_OPEN state, up to a configurable maximum.
-- **Thread Safety:** All state-changing and query methods are synchronized, making the circuit breaker safe for use in multi-threaded environments.
+- **Thread Safety:** Uses lock-free atomic operations via Compare-And-Swap (CAS) for high-performance thread safety without synchronization overhead.
 - **Configurable Thresholds:** You can set the failure threshold, initial retry timeout, and maximum backoff factor.
 
 ## Usage
@@ -45,7 +45,14 @@ See `Main.java` for a multi-threaded usage example.
 
 ## Thread Safety
 
-All public methods that modify or query the circuit state are synchronized, ensuring safe concurrent access.
+This implementation uses lock-free atomic operations for all state management:
+
+- **AtomicReference**: Circuit status transitions use `compareAndSet()` for lock-free state changes
+- **AtomicInteger**: Failure counter uses atomic increment/reset operations
+- **Volatile fields**: Timeout values use volatile for visibility guarantees
+- **No synchronization blocks**: Eliminates thread contention and blocking for high-performance concurrent access
+
+The Compare-And-Swap (CAS) approach provides better performance than traditional synchronized methods, especially under high concurrency.
 
 ## Circuit States
 
