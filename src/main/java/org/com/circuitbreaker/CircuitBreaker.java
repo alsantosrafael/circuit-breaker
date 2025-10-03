@@ -1,9 +1,13 @@
 	package org.com.circuitbreaker;
 
+	import org.com.circuitbreaker.exception.CircuitBreakerExecutionException;
+	import org.com.circuitbreaker.exception.CircuitBreakerOpenException;
+
 	import java.util.List;
 	import java.util.concurrent.CopyOnWriteArrayList;
 	import java.util.concurrent.atomic.AtomicInteger;
 	import java.util.concurrent.atomic.AtomicReference;
+	import java.util.function.Supplier;
 
 	/**
 	 * Implements a simple Circuit Breaker pattern with exponential backoff for retry timeouts.
@@ -21,6 +25,8 @@
 	 *   <li>High-performance concurrent access without synchronization blocks</li>
 	 *   <li>Event listener support for state change notifications</li>
 	 *   <li>Builder pattern for flexible configuration</li>
+	 *   <li>Convenient execute methods with automatic circuit breaker handling</li>
+	 *   <li>Support for both fallback and exception-based error handling</li>
 	 * </ul>
 	 * <p>
 	 * Example usage:
@@ -34,6 +40,21 @@
 	 *     .withRetryTimeoutMillis(1000)
 	 *     .withMaxRetryFactor(8)
 	 *     .build();
+	 *
+	 * // Execute with automatic fallback
+	 * String result = cb.execute(
+	 *     () -> externalService.call(),
+	 *     () -> "fallback result"
+	 * );
+	 *
+	 * // Execute with exception handling
+	 * try {
+	 *     String result = cb.execute(() -> externalService.call());
+	 * } catch (CircuitBreakerOpenException e) {
+	 *     // Handle circuit open
+	 * } catch (CircuitBreakerExecutionException e) {
+	 *     // Handle execution failure
+	 * }
 	 *
 	 * // Adding listeners
 	 * cb.addListener(new CircuitBreakerListener() {
@@ -68,6 +89,77 @@
 		}
 
 		/**
+		 * Executes the given supplier with circuit breaker protection and automatic fallback.
+		 * <p>
+		 * This method handles all circuit breaker logic automatically:
+		 * <ul>
+		 *   <li>If the circuit is OPEN, the fallback supplier is executed immediately</li>
+		 *   <li>If the circuit allows the request, the main supplier is executed</li>
+		 *   <li>On success, the circuit is notified and the result is returned</li>
+		 *   <li>On failure, the circuit is notified and the fallback supplier is executed</li>
+		 * </ul>
+		 * <p>
+		 * This method never throws exceptions - it always returns a result from either
+		 * the main supplier or the fallback supplier.
+		 *
+		 * @param <T> the type of result returned by both suppliers
+		 * @param supplier the main operation to execute
+		 * @param fallBack the fallback operation to execute when the circuit is open or main operation fails
+		 * @return the result from either the main supplier or fallback supplier
+		 */
+		public <T> T execute(Supplier<T> supplier, Supplier<T> fallBack) {
+			if(!this.allowRequest()) {
+				return fallBack.get();
+			}
+			try {
+				T result = supplier.get();
+				this.recordSuccess();
+				return result;
+			} catch (Exception e) {
+				this.recordFailure();
+				return fallBack.get();
+			}
+		}
+
+		/**
+		 * Executes the given supplier with circuit breaker protection, throwing exceptions on failure.
+		 * <p>
+		 * This method provides fail-fast behavior:
+		 * <ul>
+		 *   <li>If the circuit is OPEN, throws {@link CircuitBreakerOpenException} immediately</li>
+		 *   <li>If the circuit allows the request, the supplier is executed</li>
+		 *   <li>On success, the circuit is notified and the result is returned</li>
+		 *   <li>On failure, the circuit is notified and {@link CircuitBreakerExecutionException} is thrown</li>
+		 * </ul>
+		 * <p>
+		 * Use this method when you want to handle circuit breaker exceptions explicitly
+		 * rather than using automatic fallback behavior.
+		 *
+		 * @param <T> the type of result returned by the supplier
+		 * @param supplier the operation to execute
+		 * @return the result from the supplier if successful
+		 * @throws CircuitBreakerOpenException if the circuit is OPEN and blocking requests
+		 * @throws CircuitBreakerExecutionException if the supplier execution fails
+		 */
+		public <T> T execute(Supplier<T> supplier) {
+			if (!allowRequest()) {
+				throw new CircuitBreakerOpenException(
+					"Circuit is OPEN. Blocked request after failure threshold reached ("
+						+ failureThreshold + "). Retry after "
+						+ currentRetryTimeoutMillis + " ms.");
+			}
+			try {
+				T result = supplier.get();
+				recordSuccess();
+				return result;
+			} catch (Exception e) {
+				recordFailure();
+				throw new CircuitBreakerExecutionException(
+					"Execution failed while circuit was " + state.get(), e);
+			}
+		}
+
+		/**
 		 * Determines if a request is allowed based on the current circuit state.
 		 * <p>
 		 * If the circuit is OPEN and the retry timeout has passed, the state transitions to HALF_OPEN
@@ -78,7 +170,7 @@
 		 *
 		 * @return true if the request is allowed, false otherwise
 		 */
-		public boolean allowRequest() {
+		private boolean allowRequest() {
 			if (this.state.get() == CircuitState.OPEN) {
 				if (System.currentTimeMillis() - lastFailureTime > this.currentRetryTimeoutMillis) {
 					if(this.state.compareAndSet(CircuitState.OPEN, CircuitState.HALF_OPEN)) {
@@ -100,7 +192,7 @@
 		 * <p>
 		 * Thread Safety: Uses atomic operations to safely reset state without blocking.
 		 */
-		public void recordSuccess() {
+		private void recordSuccess() {
 			CircuitState old = this.state.getAndSet(CircuitState.CLOSED);
 			this.failureCounter.set(0);
 			this.lastFailureTime = 0;
@@ -119,7 +211,7 @@
 		 * <p>
 		 * Thread Safety: Uses atomic counter increments and state updates for lock-free operation.
 		 */
-		public void recordFailure() {
+		private void recordFailure() {
 			this.failureCounter.getAndIncrement();
 			this.lastFailureTime = System.currentTimeMillis();
 			if (this.state.get() == CircuitState.HALF_OPEN) {

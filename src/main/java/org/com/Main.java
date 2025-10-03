@@ -23,19 +23,19 @@ public class Main {
 			executor.submit(() -> {
 				System.out.println("Current thread working: " + Thread.currentThread().getName());
 				try {
-					if (cb.allowRequest()) {
-						boolean success = Math.random() > 0.8;
-						if (success) {
-							cb.recordSuccess();
-							System.out.println("Request " + requestId + " SUCCESS");
-						} else {
-							cb.recordFailure();
-							System.out.println("Request " + requestId + " FAILURE");
-						}
-					} else {
-						System.out.println("Request " + requestId + " BLOCKED (Circuit is OPEN).");
-					}
+					String result = cb.execute(
+						() -> {
+							boolean success = Math.random() > 0.8;
+							if (success) {
+								return "SUCCESS";
+							} else {
+								throw new RuntimeException("Simulated failure");
+							}
+						},
+						() -> "BLOCKED (Circuit is OPEN)"
+					);
 
+					System.out.println("Request " + requestId + " " + result);
 					System.out.println("Request " + requestId + " - Status: " + cb.getState());
 
 				} catch (Exception e) {

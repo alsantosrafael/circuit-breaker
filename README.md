@@ -10,6 +10,8 @@ This project implements a simple, thread-safe Circuit Breaker pattern in Java. T
 - **Configurable Thresholds:** You can set the failure threshold, initial retry timeout, and maximum backoff factor.
 - **Event Listeners:** Register listeners to receive notifications about state changes for monitoring and logging.
 - **Builder Pattern:** Flexible configuration using a fluent builder API with validation.
+- **Execute Methods:** Convenient methods that automatically handle circuit breaker logic for your operations.
+- **Flexible Error Handling:** Choose between automatic fallback or exception-based error handling.
 
 ## Usage
 
@@ -58,7 +60,35 @@ cb.addListener(new CircuitBreakerListener() {
 
 ### 3. Request Handling
 
-Before making a request, check if it's allowed:
+**Option A: Using Execute Methods (Recommended)**
+
+**With Automatic Fallback:**
+```java
+// Circuit breaker handles all logic automatically
+String result = cb.execute(
+    () -> externalService.call(),           // Main operation
+    () -> "Service temporarily unavailable" // Fallback
+);
+```
+
+**With Exception Handling:**
+```java
+try {
+    String result = cb.execute(() -> externalService.call());
+    // Use result
+} catch (CircuitBreakerOpenException e) {
+    // Circuit is open - implement fallback logic
+    return fallbackResponse();
+} catch (CircuitBreakerExecutionException e) {
+    // Execution failed - handle the underlying exception
+    Throwable cause = e.getCause();
+    // Handle specific exception types
+}
+```
+
+**Option B: Manual Circuit Breaker Control**
+
+If you need fine-grained control, you can use the manual approach:
 ```java
 if (cb.allowRequest()) {
     try {
@@ -126,6 +156,26 @@ The builder pattern provides several advantages over constructor-based configura
 - **Defaults:** Sensible default values (threshold: 5, timeout: 1000ms, factor: 8)
 - **Flexibility:** Easy to add new configuration options without breaking existing code
 - **Readability:** Method names clearly indicate what each parameter controls
+
+### Execute Methods
+
+The circuit breaker provides two convenient execute methods that handle all circuit breaker logic automatically:
+
+1. **`execute(supplier, fallback)`**: Never throws exceptions, always returns a result
+   - Use when you want guaranteed response with automatic fallback
+   - Perfect for scenarios where you always need a valid result
+   - Fallback is called when circuit is open OR when execution fails
+
+2. **`execute(supplier)`**: Throws specific exceptions for different failure modes
+   - Use when you need explicit error handling
+   - Throws `CircuitBreakerOpenException` when circuit is open
+   - Throws `CircuitBreakerExecutionException` when execution fails
+   - Allows fine-grained exception handling
+
+Both methods automatically handle:
+- Circuit state checking
+- Success/failure recording
+- State transitions and listener notifications
 
 ### Performance Characteristics
 
