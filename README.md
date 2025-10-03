@@ -8,36 +8,81 @@ This project implements a simple, thread-safe Circuit Breaker pattern in Java. T
 - **Exponential Backoff:** Retry timeouts increase exponentially after each failure in HALF_OPEN state, up to a configurable maximum.
 - **Thread Safety:** Uses lock-free atomic operations via Compare-And-Swap (CAS) for high-performance thread safety without synchronization overhead.
 - **Configurable Thresholds:** You can set the failure threshold, initial retry timeout, and maximum backoff factor.
+- **Event Listeners:** Register listeners to receive notifications about state changes for monitoring and logging.
+- **Builder Pattern:** Flexible configuration using a fluent builder API with validation.
 
 ## Usage
 
-1. **Initialization:**
-   ```java
-   CircuitBreaker cb = new CircuitBreaker(failureThreshold, retryTimeoutMillis, maxRetryFactor);
-   ```
-   - `failureThreshold`: Number of consecutive failures before opening the circuit.
-   - `retryTimeoutMillis`: Initial timeout before allowing a retry.
-   - `maxRetryFactor`: Maximum multiplier for exponential backoff.
+### 1. Initialization
 
-2. **Request Handling:**
-   - Before making a request, check if it's allowed:
-     ```java
-     if (cb.allowRequest()) {
-         // Attempt the request
-         // On success:
-         cb.recordSuccess();
-         // On failure:
-         cb.recordFailure();
-     } else {
-         // Circuit is OPEN, block or fallback
-     }
-     ```
+**Using Constructor:**
+```java
+CircuitBreaker cb = new CircuitBreaker(failureThreshold, retryTimeoutMillis, maxRetryFactor);
+```
 
-3. **Status Monitoring:**
-   - Get the current status:
-     ```java
-     CircuitStatus status = cb.getStatus();
-     ```
+**Using Builder Pattern (Recommended):**
+```java
+CircuitBreaker cb = CircuitBreaker.newBuilder()
+    .withFailureThreshold(5)
+    .withRetryTimeoutMillis(1000)
+    .withMaxRetryFactor(8)
+    .build();
+```
+
+**Parameters:**
+- `failureThreshold`: Number of consecutive failures before opening the circuit.
+- `retryTimeoutMillis`: Initial timeout before allowing a retry.
+- `maxRetryFactor`: Maximum multiplier for exponential backoff.
+
+### 2. Adding Event Listeners
+
+```java
+cb.addListener(new CircuitBreakerListener() {
+    @Override
+    public void onOpen() {
+        System.out.println("Circuit opened - requests will be blocked");
+        // Log metrics, trigger alerts, etc.
+    }
+
+    @Override
+    public void onHalfOpen() {
+        System.out.println("Circuit half-open - testing recovery");
+    }
+
+    @Override
+    public void onClose() {
+        System.out.println("Circuit closed - normal operation resumed");
+    }
+});
+```
+
+### 3. Request Handling
+
+Before making a request, check if it's allowed:
+```java
+if (cb.allowRequest()) {
+    try {
+        // Attempt the request to external service
+        String result = externalService.call();
+        cb.recordSuccess();
+        return result;
+    } catch (Exception e) {
+        cb.recordFailure();
+        throw e;
+    }
+} else {
+    // Circuit is OPEN, use fallback or throw exception
+    return fallbackResponse();
+}
+```
+
+### 4. Status Monitoring
+
+Get the current circuit state:
+```java
+CircuitState state = cb.getState();
+// Can be: CLOSED, OPEN, or HALF_OPEN
+```
 
 ## Example
 
@@ -59,3 +104,34 @@ The Compare-And-Swap (CAS) approach provides better performance than traditional
 - **CLOSED:** Requests are allowed. Failure counter resets on success.
 - **OPEN:** Requests are blocked. After the retry timeout, transitions to HALF_OPEN.
 - **HALF_OPEN:** Allows a single trial request. On success, closes the circuit. On failure, increases the retry timeout and reopens the circuit.
+
+## Advanced Features
+
+### Event Listeners
+
+The circuit breaker supports event listeners that are notified when state transitions occur. This is useful for:
+
+- **Monitoring and Metrics:** Track circuit breaker behavior and performance
+- **Logging:** Record state changes for debugging and analysis
+- **Alerting:** Trigger notifications when circuits open or close
+- **Fallback Logic:** Implement custom behaviors based on state changes
+
+Listeners are stored in a thread-safe `CopyOnWriteArrayList` and exceptions in listener code are caught and logged to prevent disrupting circuit breaker operation.
+
+### Builder Pattern
+
+The builder pattern provides several advantages over constructor-based configuration:
+
+- **Validation:** Input parameters are validated with clear error messages
+- **Defaults:** Sensible default values (threshold: 5, timeout: 1000ms, factor: 8)
+- **Flexibility:** Easy to add new configuration options without breaking existing code
+- **Readability:** Method names clearly indicate what each parameter controls
+
+### Performance Characteristics
+
+The lock-free implementation using atomic operations provides:
+
+- **High Throughput:** No blocking or contention under concurrent access
+- **Low Latency:** CAS operations are faster than synchronized blocks
+- **Scalability:** Performance doesn't degrade with increased thread count
+- **Memory Efficiency:** Minimal memory overhead from atomic fields
