@@ -1,6 +1,6 @@
 package org.com.circuitbreaker;
 
-public enum CircuitStatus {
+public enum CircuitState {
 	OPEN,
 	CLOSED,
 	HALF_OPEN,

@@ -1,24 +1,31 @@
 package org.com.circuitbreaker;
 
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
 /**
  * Implements a simple Circuit Breaker pattern with exponential backoff for retry timeouts.
  * <p>
- * Thread Safety: All state-changing and query methods are synchronized to ensure safe usage in multi-threaded environments.
+ * Thread Safety: This implementation uses lock-free atomic operations via Compare-And-Swap (CAS)
+ * for state transitions and counters, ensuring high-performance thread safety without synchronization overhead.
+ * State changes use {@link AtomicReference#compareAndSet(Object, Object)} and counter operations use
+ * {@link AtomicInteger} methods to avoid blocking and contention.
  * <p>
  * Features:
  * <ul>
  *   <li>HALF_OPEN state for trial requests after timeout</li>
  *   <li>Exponential backoff for retry timeouts up to a maximum</li>
- *   <li>Thread-safe state transitions and counters</li>
+ *   <li>Lock-free thread-safe state transitions using atomic CAS operations</li>
+ *   <li>High-performance concurrent access without synchronization blocks</li>
  * </ul>
  */
 public class CircuitBreaker {
-	private CircuitStatus status = CircuitStatus.CLOSED;
-	private int failureCounter = 0;
+	private AtomicReference<CircuitState> state = new AtomicReference<>(CircuitState.CLOSED);
+	private AtomicInteger failureCounter = new AtomicInteger(0);
 	private final int failureThreshold;
 	private final long retryTimeOutMillis;
-	private long lastFailureTime = 0;
-	private long currentRetryTimeoutMillis;
+	private volatile long lastFailureTime = 0;
+	private volatile long currentRetryTimeoutMillis;
 	private final long maxRetryTimeoutMillis;
 
 	/**
@@ -37,25 +44,26 @@ public class CircuitBreaker {
 	}
 
 	/**
-	 * Determines if a request is allowed based on the current circuit status.
+	 * Determines if a request is allowed based on the current circuit state.
 	 * <p>
-	 * If the circuit is OPEN and the retry timeout has passed, the status transitions to HALF_OPEN,
-	 * allowing a single trial request. Further requests are blocked until the trial succeeds or fails.
+	 * If the circuit is OPEN and the retry timeout has passed, the state transitions to HALF_OPEN
+	 * using atomic CAS operation, allowing a single trial request. Further requests are blocked
+	 * until the trial succeeds or fails.
 	 * <p>
-	 * Thread Safety: This method is synchronized.
+	 * Thread Safety: Uses lock-free atomic operations for thread-safe state checking and transitions.
 	 *
 	 * @return true if the request is allowed, false otherwise
 	 */
-	public synchronized boolean allowRequest() {
-		if (this.status == CircuitStatus.OPEN) {
+	public boolean allowRequest() {
+		if (this.state.get() == CircuitState.OPEN) {
 			if (System.currentTimeMillis() - lastFailureTime > this.currentRetryTimeoutMillis) {
-				this.status = CircuitStatus.HALF_OPEN;
+				this.state.compareAndSet(CircuitState.OPEN, CircuitState.HALF_OPEN);
 				System.out.println("Trying to close circuit again!");
 				return true;
 			}
 
 			return false;
-		} else if(this.status == CircuitStatus.HALF_OPEN) {
+		} else if(this.state.get() == CircuitState.HALF_OPEN) {
 			System.out.println("Still testing connection... blocking extra requests.");
 			return false;
 		}
@@ -65,11 +73,11 @@ public class CircuitBreaker {
 	/**
 	 * Records a successful request, closing the circuit and resetting counters and retry timeout.
 	 * <p>
-	 * Thread Safety: This method is synchronized.
+	 * Thread Safety: Uses atomic operations to safely reset state without blocking.
 	 */
-	public synchronized void recordSuccess() {
-		this.status = CircuitStatus.CLOSED;
-		this.failureCounter = 0;
+	public void recordSuccess() {
+		this.state.getAndSet(CircuitState.CLOSED);
+		this.failureCounter.getAndSet( 0);
 		this.lastFailureTime = 0;
 		this.currentRetryTimeoutMillis = this.retryTimeOutMillis;
 	}
@@ -80,26 +88,30 @@ public class CircuitBreaker {
 	 * If the circuit is HALF_OPEN and the trial fails, the retry timeout is exponentially increased (up to a max),
 	 * and the circuit returns to OPEN. If the failure threshold is reached, the circuit opens.
 	 * <p>
-	 * Thread Safety: This method is synchronized.
+	 * Thread Safety: Uses atomic counter increments and state updates for lock-free operation.
 	 */
-	public synchronized void recordFailure() {
-		this.failureCounter++;
+	public void recordFailure() {
+		this.failureCounter.getAndIncrement();
 		this.lastFailureTime = System.currentTimeMillis();
-		if (this.status == CircuitStatus.HALF_OPEN) {
+		if (this.state.get() == CircuitState.HALF_OPEN) {
 			this.currentRetryTimeoutMillis = Math.min(2 * this.currentRetryTimeoutMillis, this.maxRetryTimeoutMillis);
-			this.status = CircuitStatus.OPEN;
+			this.state.getAndSet(CircuitState.OPEN);
 		}
-		if (this.failureCounter >= this.failureThreshold) {
-			this.status = CircuitStatus.OPEN;
+		if (this.failureCounter.get() >= this.failureThreshold) {
+			this.state.getAndSet(CircuitState.OPEN);
 		}
 	}
 
 	/**
-	 * Returns the current status of the circuit.
+	 * Returns the current state of the circuit.
 	 *
-	 * @return the current CircuitStatus
+	 * @return the current CircuitState
 	 */
-	public CircuitStatus getStatus() {
-		return this.status;
+	public CircuitState getState() {
+		return this.state.get();
+	}
+
+	public static CircuitBreakerBuilder newBuilder() {
+		return new CircuitBreakerBuilder();
 	}
 }

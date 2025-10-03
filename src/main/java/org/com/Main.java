@@ -8,7 +8,11 @@ import java.util.concurrent.TimeUnit;
 
 public class Main {
 	public static void main(String[] args) throws InterruptedException {
-		CircuitBreaker cb = new CircuitBreaker(3, 200, 4);
+		CircuitBreaker cb =  CircuitBreaker.newBuilder()
+			.withFailureThreshold(3)
+			.withRetryTimeoutMillis(200)
+			.withMaxRetryFactor(4)
+			.build();
 		ExecutorService executor = Executors.newFixedThreadPool(10);
 
 		for (int i = 0; i < 10; i++) {
@@ -32,7 +36,7 @@ public class Main {
 						System.out.println("Request " + requestId + " BLOCKED (Circuit is OPEN).");
 					}
 
-					System.out.println("Request " + requestId + " - Status: " + cb.getStatus());
+					System.out.println("Request " + requestId + " - Status: " + cb.getState());
 
 				} catch (Exception e) {
 					Thread.currentThread().interrupt();
@@ -46,6 +50,6 @@ public class Main {
 		executor.awaitTermination(1, TimeUnit.MINUTES);
 
 		System.out.println("\n=== Test Complete ===");
-		System.out.println("Final Circuit status: " + cb.getStatus());
+		System.out.println("Final Circuit status: " + cb.getState());
 	}
 }
